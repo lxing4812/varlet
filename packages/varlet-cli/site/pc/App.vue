@@ -6,6 +6,9 @@ import { getPCLocationInfo } from '@varlet/cli/client'
 import { isPhone } from '../utils'
 import { get } from 'lodash-es'
 
+import MiniSearch from 'minisearch'
+import localeSections from '@localSearchIndex'
+
 export default defineComponent({
   components: {
     LogoAnimation
@@ -14,16 +17,29 @@ export default defineComponent({
     const useMobile = ref(get(config, 'useMobile'))
     const defaultLanguage = get(config, 'defaultLanguage')
 
-    const init = () => {
-      const { language, menuName } = getPCLocationInfo()
+    const init = async () => {
 
-      if (isPhone() && useMobile.value) {
-        window.location.href = `./mobile.html#/${menuName}?language=${language || defaultLanguage}&platform=mobile`
-        return
-      }
+      const { language, menuName } = getPCLocationInfo()
+      console.log(localeSections, language)
+      window.a = localeSections
+      let sections :{
+        [key:string] : string|number
+      }[]= JSON.parse((await localeSections[language || defaultLanguage]()).default)
+   sections = sections.map((e,idx)=> ({...e, id: idx}))
+let miniSearch = new MiniSearch({
+  fields: ['cmp','title', 'content' ,'words' ], // fields to index for full-text search
+  storeFields: ['title', 'anchor', 'cmp', 'content' ,'words'] // fields to return with search results
+})
+miniSearch.addAll(sections)
+window.s = miniSearch
+window.c = sections
+if (isPhone() && useMobile.value) {
+  window.location.href = `./mobile.html#/${menuName}?language=${language || defaultLanguage}&platform=mobile`
+  return
+}
     }
 
-    onMounted(init)
+onMounted(init)
   }
 })
 </script>

@@ -2,7 +2,12 @@ import markdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import { kebabCase } from '@varlet/shared'
 import type { Plugin } from 'vite'
+import fse from 'fs-extra'
 
+const { readFileSync } = fse
+import { glob } from '../../varlet-cli/lib/node/shared/fsUtils.js'
+import { findComponentDocs } from '../../varlet-cli/lib/node/compiler/compileSiteEntry.js'
+import Segment from 'segment'
 function htmlWrapper(html: string) {
   const matches = html.matchAll(/<h3>(.*?)<\/h3>/g)
   const hGroup = html
@@ -118,6 +123,93 @@ export interface MarkdownOptions {
   style?: string
 }
 
+const segment = new Segment();
+
+segment.useDefault();
+
+function unescape(s: string) {
+  return s.replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&quot;/g, '"');
+}
+const parsePageSectionsFromVueCode = (vueCode: string) => {
+
+  const template = String(vueCode).match(/<template>(.*?)<\/template>/s)?.[1] || ''
+  // console.log(template)
+  // split template by h tag
+  // <h1>悬浮动作按钮</h1>
+  // <h3 id="主题色按钮"><router-link to="#主题色按钮">#</router-link>主题色按钮</h3>
+  const list = template.split(/<h(\d).*?to="#(.*?)".*?link>(.*?)<\/h\1>/g)
+  // console.log(list.length)
+  list.shift()
+  const sections = []
+
+  for (let i = 0; i < list.length; i += 4) {
+    // TODO: level 
+    const level = list[i]
+    const anchor = list[i + 1]
+    const title = list[i + 2]
+    const content = unescape(String(list[i + 3]).replace(/<.*?>/g, ' ').replace(/\n/g, ' ').replace(/\s+/g,' ').trim())
+    // console.log(title)
+    if (!title || !content) {
+      continue
+    }
+    const section = {
+      level,
+      anchor,
+      title, content,
+      words: segment.doSegment(title + ' ' +content, {
+        simple: true
+      }).join(' ')
+    }
+    sections.push(section)
+  }
+  return sections
+}
+
+type Section = {
+  level: string;
+  anchor: string;
+  title: string;
+  content: string;
+  words: string;
+  cmp: string;
+}
+const getCmpNameAndLocaleFromPath = (path: string) => {
+  const re = /src\/(.*?)\/docs\/(.*?)[.]md/
+  const matchResult = path?.match?.(re)
+  return {
+    cmp: matchResult?.[1],
+    locale: matchResult?.[2]
+  }
+}
+
+let localeSections: {
+  [locale: string]: Section[]
+} = {}
+
+const scanDocs = async () => {
+  localeSections = {}
+  // TODO: root docs
+  const cmpDocs = await findComponentDocs(false)
+  
+  for (const it of cmpDocs) {
+    const md = readFileSync(it).toString()
+    const vueCode = markdownToVue(md, {})
+    const { cmp = '', locale = '' } = getCmpNameAndLocaleFromPath(it)
+    if (!localeSections[locale]) {
+      localeSections[locale] = []
+    }
+    localeSections[locale].push(...(parsePageSectionsFromVueCode(vueCode)?.map?.(e => ({ ...e, cmp }))) || [])
+  }
+
+
+}
+const LOCAL_SEARCH_INDEX_ID = '@localSearchIndex'
+const LOCAL_SEARCH_INDEX_REQUEST_PATH = '/' + LOCAL_SEARCH_INDEX_ID
 export function markdown(options: MarkdownOptions): Plugin {
   return {
     name: 'vite-plugin-varlet-markdown',
@@ -145,5 +237,53 @@ export function markdown(options: MarkdownOptions): Plugin {
         return markdownToVue(await readSource(), options)
       }
     },
+
+    async configureServer() {
+
+      await scanDocs()
+    },
+
+    resolveId(id) {
+      if (id.startsWith(LOCAL_SEARCH_INDEX_ID)) {
+        return `/${id}`
+      }
+    },
+
+    async load(id) {
+      if (id === LOCAL_SEARCH_INDEX_REQUEST_PATH) {
+        if (process.env.NODE_ENV === 'production') {
+          await scanDocs()
+        }
+        let records: string[] = []
+        for (const locale of Object.keys(localeSections)) {
+          records.push(
+            `${JSON.stringify(
+              locale
+            )}: () => import('@localSearchIndex${locale}')`
+          )
+        }
+        return `export default {${records.join(',')}}`
+      } else if (id.startsWith(LOCAL_SEARCH_INDEX_REQUEST_PATH)) {
+        return `export default ${JSON.stringify(
+          JSON.stringify(
+            localeSections[
+            id.replace(LOCAL_SEARCH_INDEX_REQUEST_PATH, '')
+            ] ?? {}
+          )
+        )}`
+      }
+    },
   }
 }
+
+// TODO:
+// searchOptions: {
+//   fuzzy: 0.2,
+//   prefix: true,
+//   boost: { title: 4, text: 2, titles: 1 }
+// }
+
+// 自动补全
+// 结果高亮
+// 搜索记录
+// 快捷键
