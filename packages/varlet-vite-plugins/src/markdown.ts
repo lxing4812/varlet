@@ -156,11 +156,14 @@ function unescape(s: string) {
 }
 
 function getCmpNameAndLocaleFromPath(path: string) {
-  const re = /src\/(.*?)\/docs\/(.*?)[.]md/
-  const matchResult = path?.match?.(re)
+  const cmpRe = /src\/(.*?)\/docs\/(.*?)[.]md/
+  const cmpMatchResult = path?.match?.(cmpRe)
+  const rootRe = /docs\/(.*?)[.](.*?)[.]md/
+  const rootMatchResult = path?.match?.(rootRe)
+
   return {
-    cmp: matchResult?.[1],
-    locale: matchResult?.[2],
+    cmp: cmpMatchResult?.[1] || rootMatchResult?.[1],
+    locale: cmpMatchResult?.[2] || rootMatchResult?.[2],
   }
 }
 
