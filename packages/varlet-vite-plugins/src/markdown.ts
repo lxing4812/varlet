@@ -2,12 +2,32 @@ import markdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import { kebabCase } from '@varlet/shared'
 import type { Plugin } from 'vite'
+
+import { findComponentDocs, findRootDocs } from '@varlet/cli/lib/node/compiler/compileSiteEntry.js'
+import Segment from 'segment'
 import fse from 'fs-extra'
 
 const { readFileSync } = fse
-import { glob } from '../../varlet-cli/lib/node/shared/fsUtils.js'
-import { findComponentDocs } from '../../varlet-cli/lib/node/compiler/compileSiteEntry.js'
-import Segment from 'segment'
+
+const segment = new Segment()
+segment.useDefault()
+
+const LOCAL_SEARCH_INDEX_ID = '@localSearchIndex'
+const LOCAL_SEARCH_INDEX_REQUEST_PATH = '/' + LOCAL_SEARCH_INDEX_ID
+
+type Section = {
+  level: string
+  anchor: string
+  title: string
+  content: string
+  words: string
+  cmp: string
+}
+
+let localeSections: {
+  [locale: string]: Section[]
+} = {}
+
 function htmlWrapper(html: string) {
   const matches = html.matchAll(/<h3>(.*?)<\/h3>/g)
   const hGroup = html
@@ -123,93 +143,81 @@ export interface MarkdownOptions {
   style?: string
 }
 
-const segment = new Segment();
-
-segment.useDefault();
-
 function unescape(s: string) {
-  return s.replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
     .replace(/&#39;/g, "'")
     .replace(/&#x27;/g, "'")
-    .replace(/&quot;/g, '"');
-}
-const parsePageSectionsFromVueCode = (vueCode: string) => {
-
-  const template = String(vueCode).match(/<template>(.*?)<\/template>/s)?.[1] || ''
-  // console.log(template)
-  // split template by h tag
-  // <h1>悬浮动作按钮</h1>
-  // <h3 id="主题色按钮"><router-link to="#主题色按钮">#</router-link>主题色按钮</h3>
-  const list = template.split(/<h(\d).*?to="#(.*?)".*?link>(.*?)<\/h\1>/g)
-  // console.log(list.length)
-  list.shift()
-  const sections = []
-
-  for (let i = 0; i < list.length; i += 4) {
-    // TODO: level 
-    const level = list[i]
-    const anchor = list[i + 1]
-    const title = list[i + 2]
-    const content = unescape(String(list[i + 3]).replace(/<.*?>/g, ' ').replace(/\n/g, ' ').replace(/\s+/g,' ').trim())
-    // console.log(title)
-    if (!title || !content) {
-      continue
-    }
-    const section = {
-      level,
-      anchor,
-      title, content,
-      words: segment.doSegment(title + ' ' +content, {
-        simple: true
-      }).join(' ')
-    }
-    sections.push(section)
-  }
-  return sections
+    .replace(/&quot;/g, '"')
 }
 
-type Section = {
-  level: string;
-  anchor: string;
-  title: string;
-  content: string;
-  words: string;
-  cmp: string;
-}
-const getCmpNameAndLocaleFromPath = (path: string) => {
+function getCmpNameAndLocaleFromPath(path: string) {
   const re = /src\/(.*?)\/docs\/(.*?)[.]md/
   const matchResult = path?.match?.(re)
   return {
     cmp: matchResult?.[1],
-    locale: matchResult?.[2]
+    locale: matchResult?.[2],
   }
 }
 
-let localeSections: {
-  [locale: string]: Section[]
-} = {}
+function parsePageSectionsFromVueCode(vueCode: string, cmp: string): Section[] {
+  const template = String(vueCode).match(/<template>(.*?)<\/template>/s)?.[1] || ''
 
-const scanDocs = async () => {
+  const list = template.split(/<h(\d).*?to="#(.*?)".*?link>(.*?)<\/h\1>/g)
+  list.shift()
+
+  const sections = []
+
+  for (let i = 0; i < list.length; i += 4) {
+    // TODO: level
+    const level = list[i]
+    const anchor = list[i + 1]
+    const title = list[i + 2]
+    const content = unescape(
+      String(list[i + 3])
+        .replace(/<.*?>/g, ' ')
+        .replace(/\n/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    )
+
+    if (title && content) {
+      const section: Section = {
+        level,
+        anchor,
+        title,
+        content,
+        words: segment
+          .doSegment(title + ' ' + content, {
+            simple: true,
+          })
+          .join(' '),
+        cmp,
+      }
+      sections.push(section)
+    }
+  }
+  return sections
+}
+
+async function scanDocs(options: MarkdownOptions) {
   localeSections = {}
-  // TODO: root docs
   const cmpDocs = await findComponentDocs(false)
-  
-  for (const it of cmpDocs) {
+  const rootDocs = await findRootDocs(false)
+
+  cmpDocs.concat(rootDocs).forEach((it) => {
     const md = readFileSync(it).toString()
-    const vueCode = markdownToVue(md, {})
+    const vueCode = markdownToVue(md, options)
     const { cmp = '', locale = '' } = getCmpNameAndLocaleFromPath(it)
     if (!localeSections[locale]) {
       localeSections[locale] = []
     }
-    localeSections[locale].push(...(parsePageSectionsFromVueCode(vueCode)?.map?.(e => ({ ...e, cmp }))) || [])
-  }
-
-
+    localeSections[locale].push(...(parsePageSectionsFromVueCode(vueCode, cmp) || []))
+  })
 }
-const LOCAL_SEARCH_INDEX_ID = '@localSearchIndex'
-const LOCAL_SEARCH_INDEX_REQUEST_PATH = '/' + LOCAL_SEARCH_INDEX_ID
+
 export function markdown(options: MarkdownOptions): Plugin {
   return {
     name: 'vite-plugin-varlet-markdown',
@@ -239,8 +247,7 @@ export function markdown(options: MarkdownOptions): Plugin {
     },
 
     async configureServer() {
-
-      await scanDocs()
+      await scanDocs(options)
     },
 
     resolveId(id) {
@@ -252,24 +259,16 @@ export function markdown(options: MarkdownOptions): Plugin {
     async load(id) {
       if (id === LOCAL_SEARCH_INDEX_REQUEST_PATH) {
         if (process.env.NODE_ENV === 'production') {
-          await scanDocs()
+          await scanDocs(options)
         }
-        let records: string[] = []
-        for (const locale of Object.keys(localeSections)) {
-          records.push(
-            `${JSON.stringify(
-              locale
-            )}: () => import('@localSearchIndex${locale}')`
-          )
-        }
+        const records: string[] = []
+        Object.keys(localeSections).forEach((locale) => {
+          records.push(`${JSON.stringify(locale)}: () => import('@localSearchIndex${locale}')`)
+        })
         return `export default {${records.join(',')}}`
-      } else if (id.startsWith(LOCAL_SEARCH_INDEX_REQUEST_PATH)) {
+      } if (id.startsWith(LOCAL_SEARCH_INDEX_REQUEST_PATH)) {
         return `export default ${JSON.stringify(
-          JSON.stringify(
-            localeSections[
-            id.replace(LOCAL_SEARCH_INDEX_REQUEST_PATH, '')
-            ] ?? {}
-          )
+          JSON.stringify(localeSections[id.replace(LOCAL_SEARCH_INDEX_REQUEST_PATH, '')] ?? {})
         )}`
       }
     },
@@ -277,12 +276,6 @@ export function markdown(options: MarkdownOptions): Plugin {
 }
 
 // TODO:
-// searchOptions: {
-//   fuzzy: 0.2,
-//   prefix: true,
-//   boost: { title: 4, text: 2, titles: 1 }
-// }
-
 // 自动补全
 // 结果高亮
 // 搜索记录
