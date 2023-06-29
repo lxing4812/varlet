@@ -6,6 +6,7 @@ import type { Plugin } from 'vite'
 import { findComponentDocs, findRootDocs } from '@varlet/cli/lib/node/compiler/compileSiteEntry.js'
 import Segment from 'segment'
 import fse from 'fs-extra'
+import MiniSearch from 'minisearch'
 
 const { readFileSync } = fse
 
@@ -22,10 +23,11 @@ type Section = {
   content: string
   words: string
   cmp: string
+  id: string
 }
 
 let localeSections: {
-  [locale: string]: Section[]
+  [locale: string]: MiniSearch<Section>
 } = {}
 
 function htmlWrapper(html: string) {
@@ -195,6 +197,7 @@ function parsePageSectionsFromVueCode(vueCode: string, cmp: string): Section[] {
           })
           .join(' '),
         cmp,
+        id: cmp + i,
       }
       sections.push(section)
     }
@@ -212,9 +215,12 @@ async function scanDocs(options: MarkdownOptions) {
     const vueCode = markdownToVue(md, options)
     const { cmp = '', locale = '' } = getCmpNameAndLocaleFromPath(it)
     if (!localeSections[locale]) {
-      localeSections[locale] = []
+      localeSections[locale] = new MiniSearch<Section>({
+        fields: ['cmp', 'title', 'content', 'words'], // fields to index for full-text search
+        storeFields: ['title', 'anchor', 'cmp', 'content', 'words'], // fields to return with search results
+      })
     }
-    localeSections[locale].push(...(parsePageSectionsFromVueCode(vueCode, cmp) || []))
+    localeSections[locale].addAllAsync(parsePageSectionsFromVueCode(vueCode, cmp))
   })
 }
 
@@ -266,7 +272,8 @@ export function markdown(options: MarkdownOptions): Plugin {
           records.push(`${JSON.stringify(locale)}: () => import('@localSearchIndex${locale}')`)
         })
         return `export default {${records.join(',')}}`
-      } if (id.startsWith(LOCAL_SEARCH_INDEX_REQUEST_PATH)) {
+      }
+      if (id.startsWith(LOCAL_SEARCH_INDEX_REQUEST_PATH)) {
         return `export default ${JSON.stringify(
           JSON.stringify(localeSections[id.replace(LOCAL_SEARCH_INDEX_REQUEST_PATH, '')] ?? {})
         )}`
