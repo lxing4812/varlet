@@ -204,5 +204,5 @@ export async function buildSiteSource() {
 
 export async function buildSiteEntry(draftMode: boolean) {
   await getVarletConfig(true)
-  await Promise.all([buildMobileSiteRoutes(draftMode), buildPcSiteRoutes(draftMode), buildSiteSource()])
+  await Promise.all([buildMobileSiteRoutes(draftMode), buildPcSiteRoutes(draftMode)])
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
 import config from '@config'
 import AnimationBox from './AnimationBox.vue'
+import Search from './Search.vue'
 import { ref, computed, defineComponent } from 'vue'
 import { get } from 'lodash-es'
 import { getBrowserTheme, getPCLocationInfo, Theme, watchTheme } from '@varlet/cli/client'
@@ -11,7 +12,7 @@ import type { Ref, ComputedRef } from 'vue'
 
 export default defineComponent({
   name: 'AppHeader',
-  components: { AnimationBox },
+  components: { AnimationBox,Search },
   props: {
     language: {
       type: String,
@@ -118,6 +119,7 @@ export default defineComponent({
     </div>
 
     <div class="varlet-site-header__tail">
+    <Search />
       <div
         class="varlet-site-header__versions"
         @mouseenter="isOpenVersionsMenu = true"
