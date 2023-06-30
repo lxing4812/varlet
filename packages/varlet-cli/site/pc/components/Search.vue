@@ -10,18 +10,22 @@ export default defineComponent({
     components: { Popper },
     setup() {
         const highlight = (text: string, keywords: string) => {
+            // let temp = keywords
+            // if(Intl) {
+            //     temp =   Array.from(new Intl.Segmenter('cn', { granularity: 'word' }).segment(temp)).map(e=> e.segment ).join(' ')
+            // }
             return keywords
                 .split(" ")
                 .sort((a, b) => a.length - b.length)
                 .reduce((text, keyword) => {
-                    return text.replace(new RegExp(`(${keyword})`, 'ig'), `<span>$1</span>`)
+                    return text.replace(new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig'), `<span>$1</span>`)
                 }, text)
         }
         const trimStartText = (text: string, keywords: string) => {
 
             const START_NUM_SLICE = 20
             const START_NUM_BEFORE = 10
-            const pos = keywords.split(" ").map(keyword => text.search(new RegExp(`${keyword}`, 'i')))
+            const pos = keywords.split(" ").map(keyword => text.search(new RegExp(`${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i')))
             const start = Math.min(...pos.filter(e => e !== -1))
 
             if (start <= START_NUM_SLICE || start === Infinity) {
@@ -31,7 +35,15 @@ export default defineComponent({
 
         }
 
-        const searchText = ref('button')
+        const searchText = ref('')
+        const cutSearchText = computed(()=>{
+            if(Intl) {
+              const text = Array.from(new Intl.Segmenter('cn', { granularity: 'word' }).segment(searchText.value)).map(e=> e.segment ).join(' ').replace(/\s+/g, ' ').trim()
+                console.log(text)
+                return text
+            }
+            return searchText.value
+        })
         const miniSearch = ref<MiniSearch<any>>()
         const handleInput = (evt: Event) => {
             console.log(evt)
@@ -49,7 +61,7 @@ export default defineComponent({
                     searchOptions: {
                         fuzzy: 0.2,
                         prefix: true,
-                        boost: { title: 4, content: 3, words: 2, cmp: 1 }
+                        boost: { title: 10, content: 5, words: 3, cmp: 20 }
                     }
                 }
             )
@@ -58,16 +70,18 @@ export default defineComponent({
 
         const rawSearchResult = computed(() => {
             // TODO: 分词
-            return miniSearch.value?.search?.(searchText.value)
+
+            return miniSearch.value?.search?.(cutSearchText.value)
 
         })
 
         const searchResult = computed(() => {
             return rawSearchResult.value?.map(e => ({
                 ...e,
-                cmp: highlight(e.cmp, searchText.value),
-                title: highlight(e.title, searchText.value),
-                content: highlight(trimStartText(e.content, searchText.value), searchText.value),
+                cmp:e.cmp,
+                hcmp: highlight(e.cmp, cutSearchText.value),
+                title: highlight(e.title, cutSearchText.value),
+                content: highlight(trimStartText(e.content, cutSearchText.value), cutSearchText.value),
                 anchor:e.anchor,
             }))
         })
@@ -97,18 +111,17 @@ export default defineComponent({
 </script>
 <template>
     <div>
-        fsdfds
-
         <div class="search">
 
-            <Popper arrow :show="true">
+            <Popper  :show="!!searchText">
                 <div class="input">
+                    <var-icon name="magnify" size="24px" />
                     <input :value="searchText" @input="handleInput" />
                 </div>
                 <template #content>
                     <div class="result-list">
-                        <div class="result-list__item" v-for="item in searchResult" :key="item.id">
-                            <div class="title" v-html="item.cmp + '-' + item.title" @click="getUrl(item,language)">
+                        <div class="result-list__item " v-for="item in searchResult" :key="item.id">
+                            <div class="title" v-html="item.hcmp + '-' + item.title" @click="getUrl(item,language)">
                             </div>
                             <div class="content" v-html="item.content">
                             </div>
@@ -123,33 +136,57 @@ export default defineComponent({
 </template>
 
 <style>
+
 :root {
-    --popper-theme-background-color: #ffffff;
-    --popper-theme-background-color-hover: #ffffff;
-    --popper-theme-text-color: #333333;
-    --popper-theme-border-width: 1px;
+    --popper-theme-background-color:  var(--site-config-color-bar);;
+    --popper-theme-background-color-hover: var(--site-config-color-bar);
+    --popper-theme-text-color: var(--site-config-color-text);
+    --popper-theme-border-width: 0;
     --popper-theme-border-style: solid;
     --popper-theme-border-color: #eeeeee;
-    --popper-theme-border-radius: 6px;
-    --popper-theme-padding: 32px;
-    --popper-theme-box-shadow: 0 6px 30px -6px rgba(0, 0, 0, 0.25);
+    --popper-theme-border-radius: 2px;
+    --popper-theme-padding: 0px;
+    --popper-theme-box-shadow:  0 3px 5px -1px var(--site-shadow-key-umbra-opacity), 0 5px 8px 0 var(--site-shadow-key-penumbra-opacity), 0 1px 14px 0 var(--site-shadow-key-ambient-opacity);
 }
 
 .search {
-    padding: 40px;
+    /* padding: 40px; */
+    margin-right: 6px;
 }
 
 .input {
     width: 200px;
+    border-radius: 3px;
+    background: var(--site-config-color-nav-button-hover-background);
+    display: flex;
+    height: 42px;
+    padding: 0 10px;
+
+
 
 }
+.input input {
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 14px;
+    color: inherit;
+    
+}
 
+.result-list {
+    max-height: calc(100vh - 180px);
+    overflow-y: scroll;
+}
 .result-list__item {
-    border-radius: 4px;
+    border-radius: 3px;
+    padding: 10px 12px;
 }
 
 .result-list__item:hover {
-    background: #d9d9d9;
+    /* background: var(--site-config-color-nav-button-hover-background); */
+    background: var(--site-config-color-pc-language-active-background);
+    color: var(--site-config-color-pc-language-active);
     cursor: pointer;
 }
 
@@ -158,6 +195,8 @@ export default defineComponent({
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    color: #888;
+    font-size: 13px;
 }
 
 .title span,
