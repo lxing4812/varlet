@@ -10,13 +10,10 @@ export default defineComponent({
     components: { Popper },
     setup() {
         const highlight = (text: string, keywords: string) => {
-            // let temp = keywords
-            // if(Intl) {
-            //     temp =   Array.from(new Intl.Segmenter('cn', { granularity: 'word' }).segment(temp)).map(e=> e.segment ).join(' ')
-            // }
+
             return keywords
                 .split(" ")
-                .sort((a, b) => a.length - b.length)
+                .sort((a, b) => b.length - a.length)
                 .reduce((text, keyword) => {
                     return text.replace(new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig'), `<span>$1</span>`)
                 }, text)
@@ -91,9 +88,16 @@ export default defineComponent({
         }, locale: string) => {
             const url =  encodeURI(`${location.origin}/#/${locale}/${item.cmp}#${item.anchor}`)
             console.log(url)
-            location.href = url
+            // location.href = url
+            window.location.assign(url);
         }
-
+        const visibleResult = ref(false)
+        const handleBlur = ()=>{
+            visibleResult.value = false
+        }
+        const handleFocus = ()=>{
+            visibleResult.value =true
+        }
         return {
             highlight,
             trimStartText,
@@ -102,7 +106,9 @@ export default defineComponent({
             searchText,
             getUrl,
             language,
-
+            handleBlur,
+            visibleResult,
+            handleFocus,
         }
 
     }
@@ -113,10 +119,10 @@ export default defineComponent({
     <div>
         <div class="search">
 
-            <Popper  :show="!!searchText">
+            <Popper  :show="!!searchText && visibleResult">
                 <div class="input">
                     <var-icon name="magnify" size="24px" />
-                    <input :value="searchText" @input="handleInput" />
+                    <input :value="searchText" @input="handleInput" @focus="handleFocus" @blur="handleBlur" />
                 </div>
                 <template #content>
                     <div class="result-list">

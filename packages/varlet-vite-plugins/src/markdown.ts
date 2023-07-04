@@ -167,44 +167,45 @@ function getCmpNameAndLocaleFromPath(path: string) {
   }
 }
 
+function processString(str: string): string {
+  return unescape(
+    str.replace(/<.*?>/g, ' ')
+      .replace(/\n/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  );
+}
+
 function parsePageSectionsFromVueCode(vueCode: string, cmp: string): Section[] {
   const template = String(vueCode).match(/<template>(.*?)<\/template>/s)?.[1] || ''
 
   const list = template.split(/<h(\d).*?to="#(.*?)".*?link>(.*?)<\/h\1>/g)
   list.shift()
 
-  const sections = []
-
-  for (let i = 0; i < list.length; i += 4) {
-    // TODO: level
-    const level = list[i]
-    const anchor = list[i + 1]
-    const title = list[i + 2]
-    const content = unescape(
-      String(list[i + 3])
-        .replace(/<.*?>/g, ' ')
-        .replace(/\n/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-    )
-
-    if (title && content) {
+  const sections = list.reduce((acc: Section[], cur: string, i: number, arr: string[]) => {
+    if (i % 4 !== 0) {
+      return acc;
+    }
+    const [level, anchor, title, content] = arr.slice(i, i + 4);
+    const processedContent = processString(content);
+    if (title && processedContent) {
       const section: Section = {
         level,
         anchor,
         title,
-        content,
+        content: processedContent,
         words: segment
-          .doSegment(title + ' ' + content, {
+          .doSegment(title + ' ' + processedContent, {
             simple: true,
           })
           .join(' '),
         cmp,
         id: cmp + i,
-      }
-      sections.push(section)
+      };
+      acc.push(section);
     }
-  }
+    return acc;
+  }, []);
   return sections
 }
 
