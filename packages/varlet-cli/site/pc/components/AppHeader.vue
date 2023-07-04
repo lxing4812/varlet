@@ -18,7 +18,7 @@ export default defineComponent({
       type: String,
     }
   },
-  setup() {
+  setup({language}) {
     const title: Ref<string> = ref(get(config, 'title'))
     const logo: Ref<string> = ref(get(config, 'logo'))
     const languages: Ref<Record<string, string>> = ref(get(config, 'pc.header.i18n'))
@@ -92,6 +92,7 @@ export default defineComponent({
       logo,
       title,
       currentVersion,
+      language,
       languages,
       versionItems,
       nonEmptyLanguages,
@@ -119,7 +120,7 @@ export default defineComponent({
     </div>
 
     <div class="varlet-site-header__tail">
-    <Search />
+    <Search :language="language"/>
       <div
         class="varlet-site-header__versions"
         @mouseenter="isOpenVersionsMenu = true"

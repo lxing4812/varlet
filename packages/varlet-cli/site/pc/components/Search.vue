@@ -8,9 +8,14 @@ import { onMounted } from 'vue';
 export default defineComponent({
     name: 'Search',
     components: { Popper },
-    setup() {
+    props: {
+        language: {
+            type: String,
+            default: 'zh-CN'
+        }
+    },
+    setup({ language }) {
         const highlight = (text: string, keywords: string) => {
-
             return keywords
                 .split(" ")
                 .sort((a, b) => b.length - a.length)
@@ -18,10 +23,10 @@ export default defineComponent({
                     return text.replace(new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'ig'), `<span>$1</span>`)
                 }, text)
         }
-        const trimStartText = (text: string, keywords: string) => {
-
+        const moveStartOfString = (text: string, keywords: string) => {
             const START_NUM_SLICE = 20
             const START_NUM_BEFORE = 10
+
             const pos = keywords.split(" ").map(keyword => text.search(new RegExp(`${keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i')))
             const start = Math.min(...pos.filter(e => e !== -1))
 
@@ -33,22 +38,23 @@ export default defineComponent({
         }
 
         const searchText = ref('')
-        const cutSearchText = computed(()=>{
-            if(Intl) {
-              const text = Array.from(new Intl.Segmenter('cn', { granularity: 'word' }).segment(searchText.value)).map(e=> e.segment ).join(' ').replace(/\s+/g, ' ').trim()
+
+        const cutSearchText = computed(() => {
+            if (Intl) {
+                const text = Array.from(new Intl.Segmenter('cn', { granularity: 'word' }).segment(searchText.value)).map(e => e.segment).join(' ').replace(/\s+/g, ' ').trim()
                 console.log(text)
                 return text
             }
             return searchText.value
         })
-        const miniSearch = ref<MiniSearch<any>>()
+
         const handleInput = (evt: Event) => {
-            console.log(evt)
-            searchText.value = (evt.target as any).value
+            searchText.value = (evt.target as HTMLInputElement)?.value || ''
         }
-        const language = 'zh-CN'
+
+        const miniSearch = ref<MiniSearch<any>>()
         onMounted(async () => {
-            let sections: string = (await localeSections[language]()).default
+            const sections: string = (await localeSections?.[language]?.())?.default
 
             miniSearch.value = MiniSearch.loadJSON(
                 sections,
@@ -65,50 +71,42 @@ export default defineComponent({
         })
 
 
-        const rawSearchResult = computed(() => {
-            // TODO: 分词
-
-            return miniSearch.value?.search?.(cutSearchText.value)
-
-        })
 
         const searchResult = computed(() => {
-            return rawSearchResult.value?.map(e => ({
+            const rawSearchResult = miniSearch.value?.search?.(cutSearchText.value)
+            return rawSearchResult?.map?.(e => ({
                 ...e,
-                cmp:e.cmp,
+                cmp: e.cmp,
                 hcmp: highlight(e.cmp, cutSearchText.value),
                 title: highlight(e.title, cutSearchText.value),
-                content: highlight(trimStartText(e.content, cutSearchText.value), cutSearchText.value),
-                anchor:e.anchor,
+                content: highlight(moveStartOfString(e.content, cutSearchText.value), cutSearchText.value),
+                anchor: e.anchor,
             }))
         })
-        const getUrl = (item: {
+
+        const openUrl = (item: {
             cmp: string,
             anchor: string,
-        }, locale: string) => {
-            const url =  encodeURI(`${location.origin}/#/${locale}/${item.cmp}#${item.anchor}`)
-            console.log(url)
-            // location.href = url
+        }) => {
+            const url = encodeURI(`${location.origin}/#/${language}/${item.cmp}#${item.anchor}`)
             window.location.assign(url);
         }
+
         const visibleResult = ref(false)
-        const handleBlur = ()=>{
+        const handleBlur = () => {
             visibleResult.value = false
         }
-        const handleFocus = ()=>{
-            visibleResult.value =true
+        const handleFocus = () => {
+            visibleResult.value = true
         }
         return {
-            highlight,
-            trimStartText,
-            searchResult,
-            handleInput,
             searchText,
-            getUrl,
-            language,
-            handleBlur,
+            handleInput,
+            searchResult,
             visibleResult,
+            handleBlur,
             handleFocus,
+            openUrl,
         }
 
     }
@@ -116,97 +114,89 @@ export default defineComponent({
 })
 </script>
 <template>
-    <div>
-        <div class="search">
+    <div class="varlet-site-search">
 
-            <Popper  :show="!!searchText && visibleResult">
-                <div class="input">
-                    <var-icon name="magnify" size="24px" />
-                    <input :value="searchText" @input="handleInput" @focus="handleFocus" @blur="handleBlur" />
-                </div>
-                <template #content>
-                    <div class="result-list">
-                        <div class="result-list__item " v-for="item in searchResult" :key="item.id">
-                            <div class="title" v-html="item.hcmp + '-' + item.title" @click="getUrl(item,language)">
-                            </div>
-                            <div class="content" v-html="item.content">
-                            </div>
+        <Popper :show="!!searchText && visibleResult">
+            <div class="varlet-site-search__input">
+                <var-icon name="magnify" size="24px" />
+                <input :value="searchText" @input="handleInput" @focus="handleFocus" @blur="handleBlur" />
+            </div>
+
+            <template #content>
+                <div class="varlet-site-search__result-list">
+                    <div class="varlet-site-search__result-item" v-for="item in searchResult" :key="item.id"
+                        @click="openUrl(item)">
+                        <div class="varlet-site-search__result-item__title" v-html="item.hcmp + '-' + item.title">
                         </div>
-
+                        <div class="varlet-site-search__result-item__content" v-html="item.content">
+                        </div>
                     </div>
-                </template>
-            </Popper>
-
-        </div>
+                </div>
+            </template>
+        </Popper>
     </div>
 </template>
 
-<style>
-
+<style lang="less">
 :root {
-    --popper-theme-background-color:  var(--site-config-color-bar);;
+    --popper-theme-background-color: var(--site-config-color-bar);
     --popper-theme-background-color-hover: var(--site-config-color-bar);
     --popper-theme-text-color: var(--site-config-color-text);
-    --popper-theme-border-width: 0;
-    --popper-theme-border-style: solid;
-    --popper-theme-border-color: #eeeeee;
     --popper-theme-border-radius: 2px;
-    --popper-theme-padding: 0px;
-    --popper-theme-box-shadow:  0 3px 5px -1px var(--site-shadow-key-umbra-opacity), 0 5px 8px 0 var(--site-shadow-key-penumbra-opacity), 0 1px 14px 0 var(--site-shadow-key-ambient-opacity);
+    --popper-theme-padding: 0;
+    --popper-theme-box-shadow: 0 3px 5px -1px var(--site-shadow-key-umbra-opacity), 0 5px 8px 0 var(--site-shadow-key-penumbra-opacity), 0 1px 14px 0 var(--site-shadow-key-ambient-opacity);
 }
 
-.search {
-    /* padding: 40px; */
+.varlet-site-search {
     margin-right: 6px;
-}
 
-.input {
-    width: 200px;
-    border-radius: 3px;
-    background: var(--site-config-color-nav-button-hover-background);
-    display: flex;
-    height: 42px;
-    padding: 0 10px;
+    &__input {
+        width: 200px;
+        border-radius: 3px;
+        background: var(--site-config-color-nav-button-hover-background);
+        display: flex;
+        height: 42px;
+        padding: 0 10px;
 
+        input {
+            border: none;
+            outline: none;
+            background: transparent;
+            font-size: 14px;
+            color: inherit;
 
+        }
+    }
 
-}
-.input input {
-    border: none;
-    outline: none;
-    background: transparent;
-    font-size: 14px;
-    color: inherit;
-    
-}
+    &__result-list {
+        max-height: calc(100vh - 180px);
+        overflow-y: scroll;
+    }
 
-.result-list {
-    max-height: calc(100vh - 180px);
-    overflow-y: scroll;
-}
-.result-list__item {
-    border-radius: 3px;
-    padding: 10px 12px;
-}
+    &__result-item {
+        border-radius: 3px;
+        padding: 10px 12px;
 
-.result-list__item:hover {
-    /* background: var(--site-config-color-nav-button-hover-background); */
-    background: var(--site-config-color-pc-language-active-background);
-    color: var(--site-config-color-pc-language-active);
-    cursor: pointer;
-}
+        &:hover {
+            background: var(--site-config-color-pc-language-active-background);
+            color: var(--site-config-color-pc-language-active);
+            cursor: pointer;
+        }
 
-.content {
-    width: 400px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: #888;
-    font-size: 13px;
-}
+        &__content {
+            width: 400px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #888;
+            font-size: 13px;
+        }
 
-.title span,
-.content span {
-    background: yellow;
+        &__title span,
+        &__content span {
+            background: yellow;
+        }
+
+    }
 }
 </style>
