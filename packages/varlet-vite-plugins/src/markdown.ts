@@ -23,6 +23,7 @@ type Section = {
   content: string
   words: string
   cmp: string
+  name: string
   id: string
 }
 
@@ -141,8 +142,17 @@ export default {
   `
 }
 
+
+
+interface Menu {
+  text?: Record<"zh-CN" | "en-US", string>,
+  doc?: string,
+  type?: number,
+}
+
 export interface MarkdownOptions {
-  style?: string
+  style?: string;
+  menu?: Menu[];
 }
 
 function unescape(s: string) {
@@ -155,17 +165,6 @@ function unescape(s: string) {
     .replace(/&quot;/g, '"')
 }
 
-function getCmpNameAndLocaleFromPath(path: string) {
-  const cmpRe = /src\/(.*?)\/docs\/(.*?)[.]md/
-  const cmpMatchResult = path?.match?.(cmpRe)
-  const rootRe = /docs\/(.*?)[.](.*?)[.]md/
-  const rootMatchResult = path?.match?.(rootRe)
-
-  return {
-    cmp: cmpMatchResult?.[1] || rootMatchResult?.[1],
-    locale: cmpMatchResult?.[2] || rootMatchResult?.[2],
-  }
-}
 
 function processString(str: string): string {
   return unescape(
@@ -176,7 +175,7 @@ function processString(str: string): string {
   );
 }
 
-function parsePageSectionsFromVueCode(vueCode: string, cmp: string): Section[] {
+function parsePageSectionsFromVueCode(vueCode: string, cmp: string, name: string): Section[] {
   const template = String(vueCode).match(/<template>(.*?)<\/template>/s)?.[1] || ''
 
   const list = template.split(/<h(\d).*?to="#(.*?)".*?link>(.*?)<\/h\1>/g)
@@ -200,6 +199,7 @@ function parsePageSectionsFromVueCode(vueCode: string, cmp: string): Section[] {
           })
           .join(' '),
         cmp,
+        name,
         id: cmp + i,
       };
       acc.push(section);
@@ -208,23 +208,38 @@ function parsePageSectionsFromVueCode(vueCode: string, cmp: string): Section[] {
   }, []);
   return sections
 }
+function getDocsFromMenu(menu: Menu[]) {
+  const LANG: ('zh-CN' | 'en-US')[] = ['zh-CN', 'en-US']
+
+  const docs = menu.filter(it => [2, 3].includes(it.type || 0)).flatMap(it => (
+
+    LANG.map(lang => ({
+      locale: lang,
+      name: it.text?.[lang],
+      cmp: it.doc,
+      path: it.type === 2 || it.doc === 'locale' ?   `src/${it.doc}/docs/${lang}.md`:`docs/${it.doc}.${lang}.md`
+    }))
+  ))
+  return docs
+}
 
 async function scanDocs(options: MarkdownOptions) {
   localeSections = {}
-  const cmpDocs = await findComponentDocs(false)
-  const rootDocs = await findRootDocs(false)
+  const docs = getDocsFromMenu(options.menu || [])
+  fse.writeFileSync('.temp.log', JSON.stringify(options, null, 2))
 
-  cmpDocs.concat(rootDocs).forEach((it) => {
-    const md = readFileSync(it).toString()
+
+  docs.forEach((it) => {
+    const md = readFileSync(it.path).toString()
     const vueCode = markdownToVue(md, options)
-    const { cmp = '', locale = '' } = getCmpNameAndLocaleFromPath(it)
+    const { cmp = '', locale = '', name = '' } = it
     if (!localeSections[locale]) {
       localeSections[locale] = new MiniSearch<Section>({
-        fields: ['cmp', 'title', 'content', 'words'], // fields to index for full-text search
-        storeFields: ['title', 'anchor', 'cmp', 'content', 'words'], // fields to return with search results
+        fields: ['name', 'cmp', 'title', 'content', 'words'], // fields to index for full-text search
+        storeFields: ['title', 'anchor', 'name', 'content', 'words', 'cmp'], // fields to return with search results
       })
     }
-    localeSections[locale].addAllAsync(parsePageSectionsFromVueCode(vueCode, cmp))
+    localeSections[locale].addAllAsync(parsePageSectionsFromVueCode(vueCode, cmp, name))
   })
 }
 
