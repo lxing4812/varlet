@@ -3,7 +3,8 @@ import { computed, defineComponent, ref } from 'vue';
 import Popper from "vue3-popper";
 import MiniSearch from 'minisearch'
 import localeSections from '@localSearchIndex'
-import { onMounted } from 'vue';
+import { watch } from 'vue';
+import { toRefs } from 'vue';
 
 export default defineComponent({
     name: 'Search',
@@ -14,7 +15,8 @@ export default defineComponent({
             default: 'zh-CN'
         }
     },
-    setup({ language }) {
+    setup(props) {
+        const { language } = toRefs(props)
         const highlight = (text: string, keywords: string) => {
             return keywords
                 .split(" ")
@@ -53,21 +55,40 @@ export default defineComponent({
         }
 
         const miniSearch = ref<MiniSearch<any>>()
-        onMounted(async () => {
-            const sections: string = (await localeSections?.[language]?.())?.default
+        // onMounted(async () => {
+        //     const sections: string = (await localeSections?.[language]?.())?.default
+
+        //     miniSearch.value = MiniSearch.loadJSON(
+        //         sections,
+        //         {
+        //             fields: ['cmp', 'title', 'content', 'words'], // fields to index for full-text search
+        //             storeFields: ['title', 'anchor', 'cmp', 'content', 'words'],// fields to return with search results
+        //             searchOptions: {
+        //                 fuzzy: 0.2,
+        //                 prefix: true,
+        //                 boost: { title: 10, content: 5, words: 3, cmp: 20 }
+        //             }
+        //         }
+        //     )
+        // })
+        watch(language, async () => {
+            searchText.value = ''
+            const sections: string = (await localeSections?.[language.value]?.())?.default
 
             miniSearch.value = MiniSearch.loadJSON(
                 sections,
                 {
-                    fields: ['cmp', 'title', 'content', 'words'], // fields to index for full-text search
-                    storeFields: ['title', 'anchor', 'cmp', 'content', 'words'],// fields to return with search results
+                    fields: ['name','cmp','title', 'content', 'words'], // fields to index for full-text search
+                    storeFields: ['title', 'anchor', 'name', 'content', 'words'],// fields to return with search results
                     searchOptions: {
                         fuzzy: 0.2,
                         prefix: true,
-                        boost: { title: 10, content: 5, words: 3, cmp: 20 }
+                        boost: { title: 10, content: 5, words: 3, name: 20 }
                     }
                 }
             )
+        }, {
+            immediate: true
         })
 
 
@@ -77,7 +98,7 @@ export default defineComponent({
             return rawSearchResult?.map?.(e => ({
                 ...e,
                 cmp: e.cmp,
-                hcmp: highlight(e.cmp, cutSearchText.value),
+                name: highlight(e.name, cutSearchText.value),
                 title: highlight(e.title, cutSearchText.value),
                 content: highlight(moveStartOfString(e.content, cutSearchText.value), cutSearchText.value),
                 anchor: e.anchor,
@@ -88,7 +109,7 @@ export default defineComponent({
             cmp: string,
             anchor: string,
         }) => {
-            const url = encodeURI(`${location.origin}/#/${language}/${item.cmp}#${item.anchor}`)
+            const url = encodeURI(`${location.origin}/#/${language.value}/${item.cmp}#${item.anchor}`)
             window.location.assign(url);
         }
 
@@ -126,7 +147,7 @@ export default defineComponent({
                 <div class="varlet-site-search__result-list">
                     <div class="varlet-site-search__result-item" v-for="item in searchResult" :key="item.id"
                         @click="openUrl(item)">
-                        <div class="varlet-site-search__result-item__title" v-html="item.hcmp + '-' + item.title">
+                        <div class="varlet-site-search__result-item__title" v-html="item.name + '-' + item.title">
                         </div>
                         <div class="varlet-site-search__result-item__content" v-html="item.content">
                         </div>
